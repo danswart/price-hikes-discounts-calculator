@@ -15,6 +15,7 @@ library(scales)
 library(gridExtra)
 library(DT)  # Load DT for datatable
 library(shinyscreenshot)
+library(ggpubr) # for the ggtexttable function
 
 
 # Define UI
@@ -208,12 +209,7 @@ server <- function(input, output) {
    ### I HEARD YOU CANNOT FEED A DT TABLE TO THE PDF() ENGINE !!!
    
    content = function(file) {
-     if(input$var3 == "png") {
-       # Specify width and height for PNG device if necessary
-       png(file, width = 800, height = 600)
-     } else {
-       pdf(file)
-     }
+     pdf(file)
      
      # Create the first data frame
      
