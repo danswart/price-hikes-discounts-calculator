@@ -9,24 +9,32 @@
 
 # Load required libraries
 library(shiny)
+library(rmarkdown)
 library(dplyr)
 library(scales)
-library(grid)
+library(gridExtra)
 library(DT)  # Load DT for datatable
+library(shinyscreenshot)
+
 
 # Define UI
 ui <- fluidPage(
+  
+  ## ADD HIGHLIGHTING
+  
   tags$head(
     tags$style(
       HTML(
         "
       /* Add yellow highlight to input fields */
+      
         .shiny-input-container input[type='number'],
         .shiny-input-container input[type='text'] {
           background-color: yellow;
         }
         
         /* Add yellow highlight to output field */
+      
         .shiny-output {
           background-color: yellow;
         }
@@ -34,32 +42,54 @@ ui <- fluidPage(
       )
     )
   ),
-  titlePanel("Pricing Strategy Calculator"),
   
-  # Input fields
+  ## DEFINE TITLES AND FORMATS
+  
+  titlePanel("Expected Consequences of Price Hikes or Discounts on Sales Calculator"),
   sidebarLayout(
     sidebarPanel(
-      numericInput("OUS", "Number of Units You Sell Annually:", value = 300),
-      numericInput("OSP", "Your Selling Price per Unit ($):", value = 500),
-      numericInput("OGPPi", "Your Gross Profit % (as integer):", value = 40),
-      numericInput("PIPi", "Proposed % Price Change (+/-):", value = 5, step = 0.01),
+      actionButton("go", "Screenshot Report"),
+      ## DEFINE USER INPUTS, LABELS & DEFAULT VALUES (numericInput is for handling numeric values, not strings)
+      
+      numericInput("OUS",
+                   "Number of Units You Sell Annually:",
+                   value = 300),
+      numericInput("OSP", 
+                   "Your Selling Price per Unit ($):", 
+                   value = 500),
+      numericInput("OGPPi",
+                   "Your Gross Profit % (as integer):",
+                   value = 40),
+      numericInput("PIPi",
+                   "Proposed % Price Change (+/-):",
+                   value = 5, step = 0.01),
+      
+      ## DEFINE BUTTONS
+      
       actionButton("calculateBtn", "Calculate"),
-      downloadButton("downloadPDF", "Save to PDF")
+      downloadButton("downloadPDF", "Download PDF"),
     ),
+      # DEFINE WHAT APPEARS IN MAIN DISPLAY PANEL (THE PLOT AND THE CALCULATION DETAILS)
     
-    # Output fields
     mainPanel(
       h3("Percent Change in Customers to Maintain the Same Gross Profit:"),
       tableOutput("outputTable"),
       h3("Calculation Details Table:"),
-      DTOutput("calculationTable")  # Use DTOutput instead of tableOutput for DataTable
-    )
+      DTOutput("calculationTable"))  # Use DTOutput instead of tableOutput for DataTable
+      
+
   )
 )
 
-# Define server logic
+
+##################################
+
 server <- function(input, output) {
-  # Calculate function (13 variables calculated)
+  
+  ## COLLECT THE VARIABLES AND LABELS NEEDED USING REACTIVE() FUNCTIONS
+  
+  # Use the eventReactive() function to return a list of the 13 variables calculated and label result 'calculate'
+  
   calculate <- eventReactive(input$calculateBtn, {
     OTR <- input$OUS * input$OSP
     OGPd <- input$OGPPi / 100
@@ -76,7 +106,11 @@ server <- function(input, output) {
     NCOGS <- round((OCPUS * NCBi), 2)
     OGPPd <- (input$OGPPi/100)
     
-    # Create a data frame called calc_table for the calculation table section (16 'Variables' labels, )
+    
+
+    # Construct a data.frame called calc_table. This data frame contains two columns, "Variables" and "Value". The "Variables" column contains labels for different variables, and the "Value" column contains values associated with those variables.
+    ## 16 variable labels in column 1
+    
     calc_table <- data.frame(
       "Variables" = c(
         "Units You Sell Annually", # input
@@ -97,7 +131,8 @@ server <- function(input, output) {
         "% Change in Customers (+/-) Without Changing Your Profit" # calc
       ),
 
-      # (16 'Values' consisting of 4 inputs + 12 calculated values)
+      # (The values column.  16 amounts in column 2)
+      
       "Value" = c(
         input$OUS, 
         dollar(input$OSP),
@@ -120,7 +155,8 @@ server <- function(input, output) {
     )
     
 
-    # Return the results (13 values total in list (last is 'calc_table' which holds the 16 'Variables' names))
+    # CONSOLIDATE INTO A LIST ALL THE NUMERIC VARIABLES, ALONG WITH THE DATA.FRAME NAMED calc_table CONTAINING 16 SELECTED VARIABLE NAMES IN COLUMN 1 AND 16 NUMERIC VALUES IN COLUMN 2
+    
     list(
       OTR = OTR,
       OGP = OGP,
@@ -139,7 +175,8 @@ server <- function(input, output) {
     )
   })
   
-  # Output the selected variable in the Output section
+  # USE renderTable() TO CREATE object called 'outputTable' for use in the display
+  
   output$outputTable <- renderTable({
     result <- calculate()
     data.frame(
@@ -148,46 +185,67 @@ server <- function(input, output) {
     )
   }, rownames = FALSE)
   
-  # Output the calculation table using DT::renderDT
+  # USING renderDT() function FROM THE DT PACKAGE, CREATE OBJECT CALLED calculationTable to dispaly the 16 Variable Labels and 16 Amounts found in the 'calculate' OBJECT ON MAIN PANEL
+  
   output$calculationTable <- renderDT({
     result <- calculate()$calc_table
     datatable(result, escape = FALSE, options = list(dom = 't', paging = FALSE))
   })
 
-  # Generate PDF report when the Save to PDF button is clicked
+ # DOWNLOADHANDLER contains 2 arguments as functions, namely FILENAME AND CONTENT
+  
   output$downloadPDF <- downloadHandler(
-    filename = function() {
-      paste("pricing_strategy_calculator_report_", Sys.Date(), ".pdf", sep = "")
-    },
-    content = function(file) {
-      # Extract the content of the DT table for the PDF
-      table_content <- calculate()$calc_table
-      
-      # Generating a PDF with the table content
-      tempReport <- file.path(tempdir(), "report.Rmd")
-      file.create(tempReport)
-      dateTime <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-      writeLines(c(
-        "---",
-        "title: 'Pricing Strategy Calculator Report'",
-        "author: 'Generated on", dateTime, "'",
-        "output: pdf_document",
-        "geometry: margin=1in",
-        "---",
-        "",
-        "Here is the Pricing Strategy Calculator Report:",
-        "",
-        "Calculation Table:",
-        "",
-        "```{r, results='asis'}",
-        "datatable(table_content, escape = FALSE, options = list(dom = 't', paging = FALSE))",
-        "```"
-      ), tempReport)
-      rmarkdown::render(tempReport, output_file = file)
-    },
-    contentType = "application/pdf"
+    
+    # BUILD THE FILENAME WITH PASTE
+    
+   filename =  function() {
+     paste("pricing_strategy_calculator_report_",
+           "pdf",
+           sep = ".")
+   },
+   
+   # CONTENT is a function with argument (file). CONTENT writes the plot or table to the appropriae downloading device
+   ### I HEARD YOU CANNOT FEED A DT TABLE TO THE PDF() ENGINE !!!
+   
+   content = function(file) {
+     if(input$var3 == "png") {
+       # Specify width and height for PNG device if necessary
+       png(file, width = 800, height = 600)
+     } else {
+       pdf(file)
+     }
+     
+     # Create the first data frame
+     
+     result_outputTable <- calculate()
+     df_outputTable <- data.frame(
+       "Variable" = "% Change in Customers (+/-) Without Changing Your Profit",
+       "Value" = percent(result_outputTable$PCUCLi / 100)
+     )
+     
+     # Output the first table
+     grid.table(df_outputTable, rows = NULL)
+     
+     # Create and output the second table
+     
+     result_calcTable <- calculate()$calc_table
+     
+     grid.table(result_calcTable, rows = NULL)
+     
+     dev.off()  # turn the device off
+  
+     observeEvent(input$go, {
+       # Take a screenshot only when the 'go' button is pressed
+       if (input$go > 0) {
+         screenshot(download = TRUE,
+                    filename = "pricing_strategy_calculator_report")
+       }
+     })
+     
+   }
   )
 }
+  
 
 # Run the Shiny app
 shinyApp(ui, server)
